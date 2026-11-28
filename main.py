@@ -70,7 +70,7 @@ def analyze_text(message):
         warnings.append("Contains a shortened link.")
 
     if re.search(r"\b(password|otp|pin|bank details)\b", text):
-        warnings.append("Requests or mentions sensitive account information.")
+        warnings.append("Mentions sensitive account information.")
 
     if len(message) > 3000:
         warnings.append("Unusually long message.")
@@ -107,8 +107,7 @@ async def analyze(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    message = update.message.text
-
+    message = update.message.text or ""
     warnings = analyze_text(message)
 
     if warnings:
@@ -119,8 +118,20 @@ async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
+async def post_init(app: Application):
+    await app.bot.set_webhook(
+        url=f"{BASE_URL}/{TOKEN}",
+        drop_pending_updates=True,
+    )
+
+
 def main():
-    app = Application.builder().token(TOKEN).build()
+    app = (
+        Application.builder()
+        .token(TOKEN)
+        .post_init(post_init)
+        .build()
+    )
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
