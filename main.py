@@ -1,6 +1,8 @@
 
 import os
 import re
+import asyncio
+
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -12,7 +14,7 @@ from telegram.ext import (
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 PORT = int(os.getenv("PORT", "10000"))
-BASE_URL = os.getenv("RENDER_EXTERNAL_URL")
+BASE_URL = os.getenv("RENDER_EXTERNAL_URL", "").rstrip("/")
 
 if not TOKEN:
     raise RuntimeError("TELEGRAM_BOT_TOKEN is missing")
@@ -64,7 +66,9 @@ def analyze_text(message):
             warnings.append(f"Suspicious phrase: {word}")
 
     if re.search(r"https?://", text):
-        warnings.append("Contains a web link. Check its destination carefully.")
+        warnings.append(
+            "Contains a web link. Check its destination carefully."
+        )
 
     if re.search(r"\b(bit\.ly|tinyurl\.com|cutt\.ly)\b", text):
         warnings.append("Contains a shortened link.")
@@ -82,7 +86,11 @@ async def analyze(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = " ".join(context.args)
 
     if not message and update.message.reply_to_message:
-        message = update.message.reply_to_message.text or ""
+        message = (
+            update.message.reply_to_message.text
+            or update.message.reply_to_message.caption
+            or ""
+        )
 
     if not message:
         await update.message.reply_text(
@@ -106,7 +114,10 @@ async def analyze(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(result)
 
 
-async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def check_message(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
     message = update.message.text or ""
     warnings = analyze_text(message)
 
@@ -118,29 +129,25 @@ async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
-async def post_init(app: Application):
-    await app.bot.set_webhook(
-        url=f"{BASE_URL}/{TOKEN}",
-        drop_pending_updates=True,
-    )
-
-
 def main():
-    app = (
-        Application.builder()
-        .token(TOKEN)
-        .post_init(post_init)
-        .build()
-    )
+    app = Application.builder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("analyze", analyze))
+
     app.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, check_message)
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND,
+            check_message
+        )
     )
 
     print("DavidAntiBugBot is starting...")
+
+    # Create an event loop for Render
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
 
     app.run_webhook(
         listen="0.0.0.0",
